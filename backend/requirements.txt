@@ -1,0 +1,9 @@
+flask
+python-dotenv
+firebase-admin
+openai
+numpy
+pillow
+pytesseract
+sentence-transformers
+faiss-cpu
