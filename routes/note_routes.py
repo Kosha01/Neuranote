@@ -1,71 +1,72 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from models.note_model import create_note
+from firebase_config import db
 
-# Blueprint
 note_bp = Blueprint("notes", __name__)
 
-# Temporary in-memory storage
-NOTES = []
+notes_ref = db.collection("notes")
 
 
-# -------------------------------
-# CREATE A NOTE
-# -------------------------------
+# CREATE NOTE
 @note_bp.route("/", methods=["POST"])
 def add_note():
     data = request.json
     note = create_note(data)
-    NOTES.append(note)
+
+    notes_ref.document(note["id"]).set(note)
     return jsonify(note), 201
 
 
-# -------------------------------
 # GET ALL NOTES
-# -------------------------------
 @note_bp.route("/", methods=["GET"])
 def get_notes():
-    return jsonify(NOTES), 200
+    notes = []
+    docs = notes_ref.stream()
+
+    for doc in docs:
+        notes.append(doc.to_dict())
+
+    return jsonify(notes), 200
 
 
-# -------------------------------
-# GET SINGLE NOTE BY ID
-# -------------------------------
+# GET SINGLE NOTE
 @note_bp.route("/<note_id>", methods=["GET"])
 def get_note(note_id):
-    for note in NOTES:
-        if note["id"] == note_id:
-            return jsonify(note), 200
+    doc = notes_ref.document(note_id).get()
 
-    return jsonify({"error": "Note not found"}), 404
+    if not doc.exists:
+        return jsonify({"error": "Note not found"}), 404
+
+    return jsonify(doc.to_dict()), 200
 
 
-# -------------------------------
-# UPDATE A NOTE
-# -------------------------------
+# UPDATE NOTE
 @note_bp.route("/<note_id>", methods=["PUT"])
 def update_note(note_id):
     data = request.json
+    doc_ref = notes_ref.document(note_id)
+    doc = doc_ref.get()
 
-    for note in NOTES:
-        if note["id"] == note_id:
-            note["title"] = data.get("title", note["title"])
-            note["content"] = data.get("content", note["content"])
-            note["type"] = data.get("type", note["type"])
-            note["tags"] = data.get("tags", note["tags"])
-            note["event_date"] = data.get("event_date", note["event_date"])
-            note["updated_at"] = datetime.utcnow().isoformat()
+    if not doc.exists:
+        return jsonify({"error": "Note not found"}), 404
 
-            return jsonify(note), 200
+    updated_data = doc.to_dict()
+    updated_data.update({
+        "title": data.get("title", updated_data["title"]),
+        "content": data.get("content", updated_data["content"]),
+        "type": data.get("type", updated_data["type"]),
+        "tags": data.get("tags", updated_data["tags"]),
+        "event_date": data.get("event_date", updated_data["event_date"]),
+        "updated_at": datetime.utcnow().isoformat()
+    })
 
-    return jsonify({"error": "Note not found"}), 404
+    doc_ref.set(updated_data)
+    return jsonify(updated_data), 200
 
 
-# -------------------------------
-# DELETE A NOTE
-# -------------------------------
+# DELETE NOTE
 @note_bp.route("/<note_id>", methods=["DELETE"])
 def delete_note(note_id):
-    global NOTES
-    NOTES = [note for note in NOTES if note["id"] != note_id]
+    notes_ref.document(note_id).delete()
     return jsonify({"message": "Note deleted successfully"}), 200
